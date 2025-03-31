@@ -1,9 +1,10 @@
 import { NextResponse } from 'next/server';
 import { query } from '@/utils/db';
+import { Publication } from '@/types/publication';
 
 export async function GET() {
   try {
-    const publications = await query(
+    const publications = await query<Publication[]>(
       'SELECT * FROM publications ORDER BY created_at DESC'
     );
     return NextResponse.json(publications);
@@ -28,12 +29,12 @@ export async function POST(request: Request) {
     }
 
     // Check if pubid already exists
-    const existing = await query(
+    const existing = await query<Publication[]>(
       'SELECT id FROM publications WHERE pubid = ?',
       [pubid]
     );
 
-    if (Array.isArray(existing) && existing.length > 0) {
+    if (existing.length > 0) {
       return NextResponse.json(
         { error: 'Publication ID already exists' },
         { status: 400 }
@@ -46,12 +47,12 @@ export async function POST(request: Request) {
     );
 
     const insertId = (result as any).insertId;
-    const savedPublication = await query(
+    const [savedPublication] = await query<Publication[]>(
       'SELECT * FROM publications WHERE id = ?',
       [insertId]
     );
 
-    return NextResponse.json(savedPublication[0], { status: 201 });
+    return NextResponse.json(savedPublication, { status: 201 });
   } catch (error) {
     console.error('Error creating publication:', error);
     return NextResponse.json(
@@ -73,12 +74,12 @@ export async function PUT(request: Request) {
     }
 
     // Check if pubid already exists for different publication
-    const existing = await query(
+    const existing = await query<Publication[]>(
       'SELECT id FROM publications WHERE pubid = ? AND id != ?',
       [pubid, id]
     );
 
-    if (Array.isArray(existing) && existing.length > 0) {
+    if (existing.length > 0) {
       return NextResponse.json(
         { error: 'Publication ID already exists' },
         { status: 400 }
@@ -90,12 +91,12 @@ export async function PUT(request: Request) {
       [pubid, name, city, id]
     );
 
-    const updatedPublication = await query(
+    const [updatedPublication] = await query<Publication[]>(
       'SELECT * FROM publications WHERE id = ?',
       [id]
     );
 
-    return NextResponse.json(updatedPublication[0]);
+    return NextResponse.json(updatedPublication);
   } catch (error) {
     console.error('Error updating publication:', error);
     return NextResponse.json(

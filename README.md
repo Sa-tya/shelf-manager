@@ -20,3 +20,29 @@ Subject attributes:
 - subject-id
 - name
 
+School attributes:
+
+- id
+- school-id
+- name
+- city
+- c-number
+- email
+- [booklist-id] (foreign key to booklist table)
+
+Books attributes:
+
+- id
+- name (foreign key (id) to booknames table)
+- price
+- quantity
+
+booklist attributes:
+
+- id
+- session
+- school-id (foreign key to school table)
+- [book-id] (foreign key to books table)
+- class
+- expected-count
+- sell-count

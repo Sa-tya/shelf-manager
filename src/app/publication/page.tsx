@@ -5,13 +5,7 @@ import CommonTable from '@/components/CommonTable';
 import Button, { EditIcon, DeleteIcon } from '@/components/Button';
 import AddPublicationModal from '@/components/AddPublicationModal';
 import { styles } from '@/styles/common';
-
-interface Publication {
-  id: number;
-  code: string;
-  name: string;
-  city: string;
-}
+import { Publication, PublicationFormData } from '@/types/publication';
 
 export default function Publications() {
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -22,6 +16,7 @@ export default function Publications() {
     { key: 'pubid', label: 'Publication ID', sortable: true, searchable: true },
     { key: 'name', label: 'Name', sortable: true, searchable: true },
     { key: 'city', label: 'City', sortable: true, searchable: true },
+    { key: 'created_at', label: 'Created At', sortable: true },
   ];
 
   useEffect(() => {
@@ -30,8 +25,11 @@ export default function Publications() {
 
   const fetchPublications = async () => {
     try {
-      const response = await fetch('/api/publications');
-      if (!response.ok) throw new Error('Failed to fetch publications');
+      const response = await fetch(`api/publications`);
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Failed to fetch publications');
+      }
       const data = await response.json();
       setPublications(data);
     } catch (error) {
@@ -39,9 +37,9 @@ export default function Publications() {
     }
   };
 
-  const handleAddOrUpdatePublication = async (publication: { id?: number; code: string; name: string; city: string }) => {
+  const handleAddOrUpdatePublication = async (publication: PublicationFormData) => {
     try {
-      const response = await fetch('/api/publications', {
+      const response = await fetch(`api/publications`, {
         method: publication.id ? 'PUT' : 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -50,7 +48,8 @@ export default function Publications() {
       });
 
       if (!response.ok) {
-        throw new Error('Failed to save publication');
+        const error = await response.json();
+        throw new Error(error.message || 'Failed to save publication');
       }
 
       const savedPublication = await response.json();
@@ -62,7 +61,7 @@ export default function Publications() {
       }
       
       setEditingPublication(null);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error saving publication:', error);
       throw error;
     }
@@ -79,7 +78,7 @@ export default function Publications() {
     }
 
     try {
-      const response = await fetch(`/api/publications`, {
+      const response = await fetch(`api/publications`, {
         method: 'DELETE',
         headers: {
           'Content-Type': 'application/json',
@@ -88,7 +87,8 @@ export default function Publications() {
       });
 
       if (!response.ok) {
-        throw new Error('Failed to delete publication');
+        const error = await response.json();
+        throw new Error(error.message || 'Failed to delete publication');
       }
 
       setPublications(publications.filter(pub => pub.id !== id));
@@ -96,6 +96,10 @@ export default function Publications() {
       console.error('Error deleting publication:', error);
       alert('Failed to delete publication');
     }
+  };
+
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleString();
   };
 
   const renderActions = (publication: Publication) => (
@@ -127,7 +131,11 @@ export default function Publications() {
       <div className={styles.card}>
         <CommonTable
           columns={columns}
-          data={publications}
+          data={publications.map(pub => ({
+            ...pub,
+            created_at: formatDate(pub.created_at || ''),
+            updated_at: formatDate(pub.updated_at || ''),
+          }))}
           actions={renderActions}
           itemsPerPage={10}
         />

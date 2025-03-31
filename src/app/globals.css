@@ -84,3 +84,39 @@ body {
 .bg-primary { background-color: var(--color-primary); }
 .bg-secondary { background-color: var(--color-secondary); }
 .border-color { border-color: var(--color-border); }
+
+/* Add these styles to customize react-select */
+.react-select-container {
+  .react-select__control {
+    @apply border border-gray-300 rounded shadow-sm;
+    min-height: 38px;
+  }
+
+  .react-select__control--is-focused {
+    @apply border-blue-500 ring-1 ring-blue-500;
+  }
+
+  .react-select__menu {
+    @apply bg-white border border-gray-300 rounded mt-1 shadow-lg;
+  }
+
+  .react-select__option {
+    @apply px-3 py-2 hover:bg-blue-50 cursor-pointer;
+  }
+
+  .react-select__option--is-selected {
+    @apply bg-blue-500 text-white;
+  }
+
+  .react-select__placeholder {
+    @apply text-gray-400;
+  }
+
+  .react-select__input {
+    @apply text-gray-700;
+  }
+
+  .react-select__single-value {
+    @apply text-gray-700;
+  }
+}
