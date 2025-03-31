@@ -1,0 +1,18 @@
+Follow the best practices for Next.js
+Use TailwindCSS for styling
+styling should be responsive
+custom css should be in the /styles folder
+class or interface should be in the /types folder
+follow DRY principle
+
+Do not change unrelated code 
+Do not remove commented code
+
+
+before creating a new file, check if it already exists in the project
+before creating a new component, check if it already exists in the project
+before creating a new page, check if it already exists in the project
+before creating a new route, check if it already exists in the project
+before creating a new function, check if it already exists in the project
+
+follow the folder structure
