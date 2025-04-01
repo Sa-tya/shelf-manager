@@ -3,15 +3,21 @@
 import { useState, useEffect } from 'react';
 import CommonTable from '@/components/CommonTable';
 import Button, { EditIcon, DeleteIcon } from '@/components/Button';
+import AddSchoolModal from '@/components/AddSchoolModal';
 import { School, SchoolFormData } from '@/types/school';
+import { styles } from '@/styles/common';
 
 export default function Schools() {
+  const [isModalOpen, setIsModalOpen] = useState(false);
   const [schools, setSchools] = useState<School[]>([]);
+  const [editingSchool, setEditingSchool] = useState<School | null>(null);
 
   const columns = [
+    { key: 'school_id', label: 'School ID', sortable: true, searchable: true },
     { key: 'name', label: 'School Name', sortable: true, searchable: true },
-    { key: 'location', label: 'Location', sortable: true, searchable: true },
+    { key: 'city', label: 'Address', sortable: true, searchable: true },
     { key: 'contact', label: 'Contact', sortable: true, searchable: true },
+    { key: 'email', label: 'Email', sortable: true, searchable: true },
   ];
 
   useEffect(() => {
@@ -29,6 +35,41 @@ export default function Schools() {
     }
   };
 
+  const handleAddOrUpdateSchool = async (school: SchoolFormData) => {
+    try {
+      const response = await fetch('/api/schools', {
+        method: school.id ? 'PUT' : 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(school),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Failed to save school');
+      }
+
+      const savedSchool = await response.json();
+      
+      if (school.id) {
+        setSchools(schools.map(s => s.id === school.id ? savedSchool : s));
+      } else {
+        setSchools([savedSchool, ...schools]);
+      }
+      
+      setEditingSchool(null);
+    } catch (error: any) {
+      console.error('Error saving school:', error);
+      throw error;
+    }
+  };
+
+  const handleEdit = (school: School) => {
+    setEditingSchool(school);
+    setIsModalOpen(true);
+  };
+
   const handleDelete = async (id: number) => {
     if (!window.confirm('Are you sure you want to delete this school?')) {
       return;
@@ -37,11 +78,17 @@ export default function Schools() {
     try {
       const response = await fetch(`/api/schools`, {
         method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify({ id }),
       });
 
-      if (!response.ok) throw new Error('Failed to delete school');
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Failed to delete school');
+      }
+
       setSchools(schools.filter(school => school.id !== id));
     } catch (error) {
       console.error('Error deleting school:', error);
@@ -50,9 +97,9 @@ export default function Schools() {
   };
 
   const renderActions = (school: School) => (
-    <div className="flex items-center gap-2">
+    <div className={styles.actions.wrapper}>
       <Button
-        onClick={() => {/* Handle edit */}}
+        onClick={() => handleEdit(school)}
         variant="secondary"
         size="sm"
         icon={<EditIcon />}
@@ -69,13 +116,13 @@ export default function Schools() {
   );
 
   return (
-    <div className="p-6">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold">Schools</h1>
-        <Button>Add School</Button>
+    <div className={styles.container}>
+      <div className={styles.pageHeader.wrapper}>
+        <h1 className={styles.pageHeader.title}>Schools</h1>
+        <Button onClick={() => setIsModalOpen(true)}>Add School</Button>
       </div>
       
-      <div className="bg-white rounded-lg shadow p-6">
+      <div className={styles.card}>
         <CommonTable
           columns={columns}
           data={schools}
@@ -83,6 +130,16 @@ export default function Schools() {
           itemsPerPage={10}
         />
       </div>
+
+      <AddSchoolModal
+        isOpen={isModalOpen}
+        onClose={() => {
+          setIsModalOpen(false);
+          setEditingSchool(null);
+        }}
+        onAdd={handleAddOrUpdateSchool}
+        editData={editingSchool}
+      />
     </div>
   );
 } 

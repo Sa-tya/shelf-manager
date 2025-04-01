@@ -1,15 +1,17 @@
 import { NextResponse } from 'next/server';
 import { query } from '@/utils/db';
-import { Book } from '@/types/book';
+import { Book, BookFormData } from '@/types/book';
 
 export async function GET() {
   try {
     const books = await query(
-      'SELECT books.*, subjects.name as subject_name, publications.name as publication_name ' +
-      'FROM books ' +
-      'LEFT JOIN subjects ON books.subject_id = subjects.id ' +
-      'LEFT JOIN publications ON books.company_id = publications.id ' +
-      'ORDER BY books.created_at DESC'
+      `SELECT books.*, booknames.name as book_name, 
+       subjects.name as subject_name, publications.name as publication_name
+       FROM books
+       JOIN booknames ON books.book_name_id = booknames.id
+       LEFT JOIN subjects ON booknames.subject_id = subjects.id
+       LEFT JOIN publications ON booknames.company_id = publications.id
+       ORDER BY books.created_at DESC`
     );
     return NextResponse.json(books);
   } catch (error) {
@@ -23,31 +25,65 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const { title, author, isbn, subject_id, company_id } = await request.json();
+    const { book_name_id, entries } = await request.json() as BookFormData;
 
-    if (!title || !author || !isbn || !subject_id || !company_id) {
+    if (!book_name_id || !entries || entries.length === 0) {
       return NextResponse.json(
-        { error: 'All fields are required' },
+        { error: 'Book name and at least one entry are required' },
         { status: 400 }
       );
     }
 
-    const result = await query(
-      'INSERT INTO books (title, author, isbn, subject_id, company_id) VALUES (?, ?, ?, ?, ?)',
-      [title, author, isbn, subject_id, company_id]
+    // Validate entries
+    // for (const entry of entries) {
+    //   if (!entry.class || !entry.price || !entry.quantity) {
+    //     return NextResponse.json(
+    //       { error: 'Class, price, and quantity are required for each entry' },
+    //       { status: 400 }
+    //     );
+    //   }
+    // }
+
+    // Check if book_name_id exists
+    const bookName = await query(
+      'SELECT id FROM booknames WHERE id = ?',
+      [book_name_id]
     );
 
-    const insertId = (result as any).insertId;
-    const [savedBook] = await query(
-      'SELECT * FROM books WHERE id = ?',
-      [insertId]
+    if (!Array.isArray(bookName) || bookName.length === 0) {
+      return NextResponse.json(
+        { error: 'Book name not found' },
+        { status: 404 }
+      );
+    }
+
+    // Insert all entries
+    const insertPromises = entries
+      .filter(entry => entry.class && entry.price && entry.quantity)
+      .map(entry =>
+        query(
+          'INSERT INTO books (book_name_id, class, price, quantity) VALUES (?, ?, ?, ?)',
+          [book_name_id, entry.class, entry.price, entry.quantity]
+        )
+      );
+
+    await Promise.all(insertPromises);
+
+    // Fetch all inserted entries
+    const savedBooks = await query(
+      `SELECT books.*, booknames.name as book_name
+       FROM books
+       JOIN booknames ON books.book_name_id = booknames.id
+       WHERE books.book_name_id = ?
+       ORDER BY books.created_at DESC`,
+      [book_name_id]
     );
 
-    return NextResponse.json(savedBook, { status: 201 });
+    return NextResponse.json(savedBooks, { status: 201 });
   } catch (error) {
-    console.error('Error creating book:', error);
+    console.error('Error creating book entries:', error);
     return NextResponse.json(
-      { error: 'Failed to create book' },
+      { error: 'Failed to create book entries' },
       { status: 500 }
     );
   }
@@ -55,26 +91,67 @@ export async function POST(request: Request) {
 
 export async function PUT(request: Request) {
   try {
-    const { id, title, author, isbn, subject_id, company_id } = await request.json();
+    const { id, price, quantity } = await request.json();
 
-    if (!id || !title || !author || !isbn || !subject_id || !company_id) {
+    if (!id || (!price && !quantity)) {
       return NextResponse.json(
-        { error: 'All fields are required' },
+        { error: 'Book ID and at least price or quantity are required' },
         { status: 400 }
       );
     }
 
-    await query(
-      'UPDATE books SET title = ?, author = ?, isbn = ?, subject_id = ?, company_id = ? WHERE id = ?',
-      [title, author, isbn, subject_id, company_id, id]
-    );
-
-    const [updatedBook] = await query(
-      'SELECT * FROM books WHERE id = ?',
+    // Check if book exists
+    const existing = await query(
+      'SELECT id FROM books WHERE id = ?',
       [id]
     );
 
-    return NextResponse.json(updatedBook);
+    if (!Array.isArray(existing) || existing.length === 0) {
+      return NextResponse.json(
+        { error: 'Book not found' },
+        { status: 404 }
+      );
+    }
+
+    // Update only provided fields
+    const updates: string[] = [];
+    const values: (number)[] = [];
+
+    if (price !== undefined) {
+      updates.push('price = ?');
+      values.push(price);
+    }
+    if (quantity !== undefined) {
+      updates.push('quantity = ?');
+      values.push(quantity);
+    }
+
+    values.push(id);
+
+    await query(
+      `UPDATE books SET ${updates.join(', ')} WHERE id = ?`,
+      values
+    );
+
+    const updatedBook = await query(
+      `SELECT books.*, booknames.name as book_name, 
+       subjects.name as subject_name, publications.name as publication_name
+       FROM books
+       JOIN booknames ON books.book_name_id = booknames.id
+       LEFT JOIN subjects ON booknames.subject_id = subjects.id
+       LEFT JOIN publications ON booknames.company_id = publications.id
+       WHERE books.id = ?`,
+      [id]
+    );
+
+    if (!Array.isArray(updatedBook) || updatedBook.length === 0) {
+      return NextResponse.json(
+        { error: 'Book not found' },
+        { status: 404 }
+      );
+    }
+
+    return NextResponse.json(updatedBook[0]);
   } catch (error) {
     console.error('Error updating book:', error);
     return NextResponse.json(
@@ -92,6 +169,19 @@ export async function DELETE(request: Request) {
       return NextResponse.json(
         { error: 'Book ID is required' },
         { status: 400 }
+      );
+    }
+
+    // Check if book exists
+    const existing = await query(
+      'SELECT id FROM books WHERE id = ?',
+      [id]
+    );
+
+    if (!Array.isArray(existing) || existing.length === 0) {
+      return NextResponse.json(
+        { error: 'Book not found' },
+        { status: 404 }
       );
     }
 
