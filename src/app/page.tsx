@@ -24,12 +24,12 @@ export default function Home() {
   const [editingBook, setEditingBook] = useState<Book | null>(null);
 
   const columns = [
-    { key: 'book_name', label: 'Book Name', sortable: true, searchable: true },
     { key: 'subject_name', label: 'Subject', sortable: true, searchable: true },
-    { key: 'publication_name', label: 'Publication', sortable: true, searchable: true },
+    { key: 'book_name', label: 'Book Name', sortable: true, searchable: true },
     { key: 'class', label: 'Class', sortable: true, searchable: true },
-    { key: 'price', label: 'Price', sortable: true },
+    { key: 'publication_name', label: 'Publication', sortable: true, searchable: true },
     { key: 'quantity', label: 'Quantity', sortable: true },
+    { key: 'price', label: 'Price', sortable: true },
   ];
 
   useEffect(() => {

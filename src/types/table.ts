@@ -3,6 +3,7 @@ export interface Column {
   label: string;
   sortable?: boolean;
   searchable?: boolean;
+  render?: (item: any) => React.ReactNode;
 }
 
 export interface TableProps {

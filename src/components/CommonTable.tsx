@@ -111,7 +111,7 @@ export default function CommonTable({ columns, data, actions, itemsPerPage = 10 
               <tr key={index}>
                 {columns.map(column => (
                   <td key={column.key} className={styles.table.body.cell}>
-                    {item[column.key]}
+                    {column.render ? column.render(item) : item[column.key]}
                   </td>
                 ))}
                 {actions && (

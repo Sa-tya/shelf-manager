@@ -6,15 +6,30 @@ import Button, { EditIcon, DeleteIcon } from '@/components/Button';
 import AddSchoolModal from '@/components/AddSchoolModal';
 import { School, SchoolFormData } from '@/types/school';
 import { styles } from '@/styles/common';
+import { useRouter } from 'next/navigation';
 
 export default function Schools() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [schools, setSchools] = useState<School[]>([]);
   const [editingSchool, setEditingSchool] = useState<School | null>(null);
+  const router = useRouter();
 
   const columns = [
     { key: 'school_id', label: 'School ID', sortable: true, searchable: true },
-    { key: 'name', label: 'School Name', sortable: true, searchable: true },
+    { 
+      key: 'name', 
+      label: 'School Name', 
+      sortable: true, 
+      searchable: true,
+      render: (school: School) => (
+        <button
+          onClick={() => router.push(`/schools/${school.school_id}/booklist`)}
+          className="text-blue-600 hover:text-blue-800 hover:underline text-left"
+        >
+          {school.name}
+        </button>
+      )
+    },
     { key: 'city', label: 'Address', sortable: true, searchable: true },
     { key: 'contact', label: 'Contact', sortable: true, searchable: true },
     { key: 'email', label: 'Email', sortable: true, searchable: true },
@@ -98,6 +113,14 @@ export default function Schools() {
 
   const renderActions = (school: School) => (
     <div className={styles.actions.wrapper}>
+      <Button
+        onClick={() => router.push(`/schools/${school.school_id}/booklist`)}
+        variant="primary"
+        size="sm"
+        title="Booklist"
+      >
+        Booklist
+      </Button>
       <Button
         onClick={() => handleEdit(school)}
         variant="secondary"
