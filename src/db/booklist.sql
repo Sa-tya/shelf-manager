@@ -6,5 +6,6 @@ CREATE TABLE IF NOT EXISTS booklist (
   sell_count INT NOT NULL DEFAULT 0,
   session YEAR NOT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (school_id) REFERENCES schools(id) ON DELETE CASCADE
+  FOREIGN KEY (school_id) REFERENCES schools(id) ON DELETE CASCADE,
+  UNIQUE KEY unique_school_class_session (school_id, class, session)
 ); 

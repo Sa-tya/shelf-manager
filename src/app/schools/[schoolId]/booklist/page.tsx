@@ -59,11 +59,18 @@ interface SimulatedBook {
   subject_id: number;
   company_id: number;
   class: string;
+  price: number;
 }
 
 interface SimulatedClass {
   class: string;
   books: SimulatedBook[];
+}
+
+interface SessionData {
+  sessions: number[];
+  currentSession: number;
+  booklists: BookListItem[];
 }
 
 export default function BookList() {
@@ -72,6 +79,8 @@ export default function BookList() {
   const [bookGroups, setBookGroups] = useState<BookListGroup[]>([]);
   const [expandedClass, setExpandedClass] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [availableSessions, setAvailableSessions] = useState<number[]>([]);
+  const [currentSession, setCurrentSession] = useState<number>(new Date().getFullYear());
   
   // New state for form
   const [subjects, setSubjects] = useState<Subject[]>([]);
@@ -84,16 +93,28 @@ export default function BookList() {
   const [simulatedClasses, setSimulatedClasses] = useState<SimulatedClass[]>([]);
   const [showSimulation, setShowSimulation] = useState(false);
   const [selectedSubjects, setSelectedSubjects] = useState<number[]>([]);
-
+  const [bookListItems, setBookListItems] = useState<any[]>([]);
   useEffect(() => {
     fetchBookList();
     fetchSubjects();
     fetchPublications();
-  }, [schoolId]);
+    fetchBookListItems();
+  }, [schoolId, currentSession]);
 
   useEffect(() => {
     fetchBooks();
   }, [selectedSubject, selectedPublication]);
+
+  // Add new effect for auto-selecting single book option
+  useEffect(() => {
+    const availableBooks = books.filter(book => !simulatedClasses.some(
+      classGroup => classGroup.books.some(b => b.id === book.id)
+    ));
+
+    if (availableBooks.length === 1) {
+      setSelectedBook(availableBooks[0].id);
+    }
+  }, [books, simulatedClasses]);
 
   const fetchSubjects = async () => {
     try {
@@ -164,14 +185,56 @@ export default function BookList() {
 
   const fetchBookList = async () => {
     try {
-      const response = await fetch(`/api/schools/${schoolId}/booklist`);
+      const response = await fetch(`/api/booklist?schoolId=${schoolId}&session=${currentSession}`);
+      if (!response.ok) throw new Error('Failed to fetch booklist');
+      const data = await response.json() as SessionData;
+      
+      // Set sessions data if available
+      if (data.sessions) {
+        setAvailableSessions(data.sessions);
+        setCurrentSession(data.currentSession);
+      }
+
+      // Group books by class
+      const groups: BookListGroup[] = CLASSES.map(cls => ({
+        class: cls.value,
+        books: data.booklists.filter((book: BookListItem) => book.class === cls.value)
+      }));
+      
+      setBookGroups(groups);
+    } catch (error) {
+      console.error('Error fetching booklist:', error);
+    }
+  };
+
+  const fetchBookListItems = async () => {
+    try {
+      const response = await fetch(`/api/booklist/items?schoolId=${schoolId}&session=${currentSession}`);
+      if (!response.ok) throw new Error('Failed to fetch booklist items');
+      const data = await response.json() as BookListItem[];
+      
+      // Group books by class
+      const items: any[] = CLASSES.map(cls => ({
+        class: cls.value,
+        books: data.filter((book: BookListItem) => book.class === cls.value)
+      }));
+      setBookListItems(items);
+    } catch (error) {
+      console.error('Error fetching booklist:', error);
+    }
+  };
+
+  const handleSessionChange = async (session: number) => {
+    try {
+      setCurrentSession(session);
+      const response = await fetch(`/api/booklist?schoolId=${schoolId}&session=${session}`);
       if (!response.ok) throw new Error('Failed to fetch booklist');
       const data = await response.json();
       
       // Group books by class
       const groups: BookListGroup[] = CLASSES.map(cls => ({
         class: cls.value,
-        books: data.filter((book: BookListItem) => book.class === cls.value)
+        books: data.booklists.filter((book: BookListItem) => book.class === cls.value)
       }));
       
       setBookGroups(groups);
@@ -190,7 +253,7 @@ export default function BookList() {
     return subjects.filter(subject => !selectedSubjects.includes(subject.id));
   };
 
-  const handleSimulate = (e: React.FormEvent) => {
+  const handleSimulate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedBook || selectedClasses.length === 0) {
       alert('Please fill all required fields');
@@ -202,41 +265,51 @@ export default function BookList() {
 
     addSelectedSubject(selectedBookData.subject_id);
 
-    // Create simulation data
-    const newSimulatedClasses = selectedClasses.map(className => {
-      // Find existing simulation for this class
-      const existingClass = simulatedClasses.find(sc => sc.class === className);
-      
-      return {
-        class: className,
-        books: [
-          ...(existingClass?.books || []),
-          {
-            ...selectedBookData,
-            class: className
-          }
-        ]
-      };
-    });
-
-    // Merge with existing simulations, preserving non-selected classes
-    const updatedSimulations = [...simulatedClasses];
-    newSimulatedClasses.forEach(newClass => {
-      const index = updatedSimulations.findIndex(sc => sc.class === newClass.class);
-      if (index >= 0) {
-        updatedSimulations[index] = newClass;
-      } else {
-        updatedSimulations.push(newClass);
+    try {
+      // Fetch prices for all classes at once
+      const response = await fetch(`/api/books/price?id=${encodeURIComponent(selectedBookData.id)}`);
+      if (!response.ok) {
+        throw new Error('Failed to fetch prices');
       }
-    });
+      const { prices } = await response.json();
 
-    setSimulatedClasses(updatedSimulations);
-    setShowSimulation(true);
-    
-    // Reset selections for next book
-    setSelectedBook(null);
-    setSelectedSubject(null);
-    setSelectedPublication(null);
+      // Create simulation data with prices
+      const newSimulatedClasses = selectedClasses.map(className => {
+        return {
+          class: className,
+          books: [
+            ...simulatedClasses.find(sc => sc.class === className)?.books || [],
+            {
+              ...selectedBookData,
+              class: className,
+              price: prices[className] || 0
+            }
+          ]
+        };
+      });
+
+      // Merge with existing simulations, preserving non-selected classes
+      const updatedSimulations = [...simulatedClasses];
+      newSimulatedClasses.forEach(newClass => {
+        const index = updatedSimulations.findIndex(sc => sc.class === newClass.class);
+        if (index >= 0) {
+          updatedSimulations[index] = newClass;
+        } else {
+          updatedSimulations.push(newClass);
+        }
+      });
+
+      setSimulatedClasses(updatedSimulations);
+      setShowSimulation(true);
+      
+      // Reset selections for next book
+      setSelectedBook(null);
+      setSelectedSubject(null);
+      setSelectedPublication(null);
+    } catch (error) {
+      console.error('Error fetching prices:', error);
+      alert('Failed to fetch prices');
+    }
   };
 
   const removeSimulatedBook = (className: string, bookId: number) => {
@@ -264,23 +337,47 @@ export default function BookList() {
 
   const handleSaveSimulation = async () => {
     try {
-      // Create all books from simulation
-      const promises = simulatedClasses.flatMap(classGroup => 
-        classGroup.books.map(book => 
-          fetch(`/api/schools/${schoolId}/booklist`, {
+      // Step 1: Create booklists for each class
+      const uniqueClasses = [...new Set(simulatedClasses.map(sc => sc.class))];
+      const booklistPromises = uniqueClasses.map(className => 
+        fetch(`/api/booklist`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            schoolId,
+            class: className,
+          }),
+        })
+      );
+
+      // Wait for all booklists to be created and get their IDs
+      const booklistResponses = await Promise.all(booklistPromises);
+      const booklists = await Promise.all(booklistResponses.map(res => res.json()));
+
+      // Step 2: Add books to each booklist
+      const booklistItemPromises = simulatedClasses.flatMap(classGroup => {
+        const booklist = booklists.find(bl => bl.class === classGroup.class);
+        if (!booklist) return [];
+
+        return classGroup.books.map(book => 
+          fetch(`/api/booklist/items`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-              name: book.name,
-              class: book.class,
+              schoolId,
+              booklistId: booklist.id,
+              book_id: book.id,
+              _class: book.class
             }),
           })
-        )
-      );
+        );
+      });
 
-      await Promise.all(promises);
+      await Promise.all(booklistItemPromises);
       await fetchBookList();
       setIsModalOpen(false);
       resetForm();
@@ -291,10 +388,13 @@ export default function BookList() {
   };
 
   const resetForm = () => {
+    // Reset all form selections
     setSelectedSubject(null);
     setSelectedPublication(null);
     setSelectedBook(null);
     setSelectedClasses([]);
+    
+    // Reset simulation state
     setSimulatedClasses([]);
     setShowSimulation(false);
     setSelectedSubjects([]);
@@ -304,11 +404,18 @@ export default function BookList() {
     if (!window.confirm('Are you sure you want to delete this book?')) return;
 
     try {
-      const response = await fetch(`/api/schools/${schoolId}/booklist/${bookId}`, {
+      const response = await fetch(`/api/booklist`, {
         method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          schoolId,
+          booklistId: bookId
+        })
       });
 
-      if (!response.ok) throw new Error('Failed to delete book');
+      if (!response.ok) throw new Error('Failed to delete booklist');
 
       setBookGroups(prevGroups =>
         prevGroups.map(group => ({
@@ -317,8 +424,8 @@ export default function BookList() {
         }))
       );
     } catch (error) {
-      console.error('Error deleting book:', error);
-      alert('Failed to delete book');
+      console.error('Error deleting booklist:', error);
+      alert('Failed to delete booklist');
     }
   };
 
@@ -359,12 +466,27 @@ export default function BookList() {
   return (
     <div className={styles.container}>
       <div className={styles.pageHeader.wrapper}>
-        <h1 className="text-white">Book List of {schoolId}</h1>
+        <div className="flex items-center gap-4">
+          <h1 className="text-white">Book List of {schoolId}</h1>
+          {availableSessions.length > 0 && (
+            <select
+              value={currentSession}
+              onChange={(e) => handleSessionChange(Number(e.target.value))}
+              className="bg-white text-gray-900 rounded-md px-3 py-1.5 text-sm font-medium"
+            >
+              {availableSessions.map(year => (
+                <option key={year} value={year}>
+                  Session {year.toString()}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
         <Button onClick={() => setIsModalOpen(true)}>Create Book-List</Button>
       </div>
 
       <div className="grid gap-4">
-        {bookGroups.map(group => (
+        {bookListItems.map(group => (
           <div key={group.class} className="border rounded-lg overflow-hidden">
             <button
               className={`w-full p-4 text-left bg-gray-50 hover:bg-gray-100 flex justify-between items-center ${
@@ -383,20 +505,23 @@ export default function BookList() {
             {expandedClass === group.class && (
               <div className="p-4">
                 {group.books.length > 0 ? (
-                  <table className="min-w-full divide-y divide-gray-200">
+                  <table className="min-w-full divide-y divide-gray-200 bg-white">
                     <thead>
                       <tr>
+                        <th className="px-4 py-2 text-left">Subject</th>
                         <th className="px-4 py-2 text-left">Name</th>
+                        <th className="px-4 py-2">Publication</th>
                         <th className="px-4 py-2 text-left">Price</th>
-                        <th className="px-4 py-2"></th>
                       </tr>
                     </thead>
                     <tbody>
                       {group.books.map(book => (
                         <tr key={book.id} className="hover:bg-gray-50">
-                          <td className="px-4 py-2">{book.name}</td>
-                          <td className="px-4 py-2">₹{book.price}</td>
-                          <td className="px-4 py-2 text-right">
+                          <td className='px-4 py-2'>{book.subject_name}</td>
+                          <td className="px-4 py-2">{book.book_name}</td>
+                          <td className="px-4 py-2">{book.company_name}</td>
+                          <td className="px-4 py-2">₹{book.book_price}</td>
+                          {/* <td className="px-4 py-2 text-right">
                             <Button
                               onClick={() => handleDeleteBook(book.id)}
                               variant="danger"
@@ -404,7 +529,7 @@ export default function BookList() {
                             >
                               Delete
                             </Button>
-                          </td>
+                          </td> */}
                         </tr>
                       ))}
                     </tbody>
@@ -453,10 +578,10 @@ export default function BookList() {
                         label: subject.name
                       }))}
                       onChange={handleSubjectChange}
-                      value={subjects.map(subject => ({
-                        value: subject.id,
-                        label: subject.name
-                      })).find(option => option.value === selectedSubject)}
+                      value={selectedSubject ? {
+                        value: selectedSubject,
+                        label: subjects.find(s => s.id === selectedSubject)?.name || ''
+                      } : null}
                       className="react-select-container"
                       classNamePrefix="react-select"
                       placeholder={getRemainingSubjects().length === 0 
@@ -482,10 +607,10 @@ export default function BookList() {
                         label: pub.name
                       }))}
                       onChange={handlePublicationChange}
-                      value={publications.map(pub => ({
-                        value: pub.id,
-                        label: pub.name
-                      })).find(option => option.value === selectedPublication)}
+                      value={selectedPublication ? {
+                        value: selectedPublication,
+                        label: publications.find(p => p.id === selectedPublication)?.name || ''
+                      } : null}
                       className="react-select-container"
                       classNamePrefix="react-select"
                       placeholder="Select publication (optional)..."
@@ -498,31 +623,39 @@ export default function BookList() {
                       Book *
                     </label>
                     <Select
-                      options={books.map(book => ({
-                        value: book.id,
-                        label: `${book.name} ${
-                          subjects.find(s => s.id === book.subject_id)?.name ? 
-                          `(${subjects.find(s => s.id === book.subject_id)?.name})` : 
-                          ''
-                        } ${
-                          publications.find(p => p.id === book.company_id)?.name ?
-                          `[${publications.find(p => p.id === book.company_id)?.name}]` :
-                          ''
-                        }`
-                      }))}
+                      options={books
+                        .filter(book => !simulatedClasses.some(
+                          classGroup => classGroup.books.some(b => b.id === book.id)
+                        ))
+                        .map(book => ({
+                          value: book.id,
+                          label: `${book.name} ${
+                            subjects.find(s => s.id === book.subject_id)?.name ? 
+                            `(${subjects.find(s => s.id === book.subject_id)?.name})` : 
+                            ''
+                          } ${
+                            publications.find(p => p.id === book.company_id)?.name ?
+                            `[${publications.find(p => p.id === book.company_id)?.name}]` :
+                            ''
+                          }`
+                        }))}
                       onChange={handleBookChange}
-                      value={books.map(book => ({
-                        value: book.id,
-                        label: `${book.name} ${
-                          subjects.find(s => s.id === book.subject_id)?.name ? 
-                          `(${subjects.find(s => s.id === book.subject_id)?.name})` : 
-                          ''
-                        } ${
-                          publications.find(p => p.id === book.company_id)?.name ?
-                          `[${publications.find(p => p.id === book.company_id)?.name}]` :
-                          ''
-                        }`
-                      })).find(option => option.value === selectedBook)}
+                      value={selectedBook ? books
+                        .filter(book => !simulatedClasses.some(
+                          classGroup => classGroup.books.some(b => b.id === book.id && b.id !== selectedBook)
+                        ))
+                        .map(book => ({
+                          value: book.id,
+                          label: `${book.name} ${
+                            subjects.find(s => s.id === book.subject_id)?.name ? 
+                            `(${subjects.find(s => s.id === book.subject_id)?.name})` : 
+                            ''
+                          } ${
+                            publications.find(p => p.id === book.company_id)?.name ?
+                            `[${publications.find(p => p.id === book.company_id)?.name}]` :
+                            ''
+                          }`
+                        })).find(option => option.value === selectedBook) : null}
                       className="react-select-container"
                       classNamePrefix="react-select"
                       placeholder="Select book..."
@@ -538,11 +671,20 @@ export default function BookList() {
                           }
                           return "Select subject or publication to filter books";
                         }
-                        return "No options available";
+                        const availableBooks = books.filter(book => !simulatedClasses.some(
+                          classGroup => classGroup.books.some(b => b.id === book.id)
+                        ));
+                        return availableBooks.length === 0 
+                          ? "All available books have been added" 
+                          : "No options available";
                       }}
                     />
                     <p className="mt-1 text-sm text-gray-500">
-                      {books.length} book{books.length !== 1 ? 's' : ''} available
+                      {books.filter(book => !simulatedClasses.some(
+                        classGroup => classGroup.books.some(b => b.id === book.id)
+                      )).length} book{books.filter(book => !simulatedClasses.some(
+                        classGroup => classGroup.books.some(b => b.id === book.id)
+                      )).length !== 1 ? 's' : ''} available
                       {selectedSubject && subjects.find(s => s.id === selectedSubject) 
                         ? ` for ${subjects.find(s => s.id === selectedSubject)?.name}` 
                         : ''}
@@ -560,7 +702,7 @@ export default function BookList() {
                       options={CLASSES}
                       isMulti
                       onChange={handleClassesChange}
-                      value={CLASSES.filter(option => selectedClasses.includes(option.value))}
+                      value={selectedClasses.length > 0 ? CLASSES.filter(option => selectedClasses.includes(option.value)) : []}
                       className="react-select-container"
                       classNamePrefix="react-select"
                       placeholder="Select classes..."
@@ -576,45 +718,93 @@ export default function BookList() {
               {/* Simulation Preview */}
               <div className="border-t lg:border-t-0 lg:border-l pt-4 lg:pt-0 lg:pl-6">
                 <h3 className="text-lg font-semibold mb-4">Preview</h3>
+                
+                {/* Subject Chips */}
+                {selectedSubjects.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mb-4">
+                    {selectedSubjects.map(subjectId => {
+                      const subject = subjects.find(s => s.id === subjectId);
+                      if (!subject) return null;
+                      
+                      return (
+                        <div 
+                          key={subject.id}
+                          className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full flex items-center gap-2"
+                        >
+                          <span className="text-sm">{subject.name}</span>
+                          <button
+                            onClick={() => {
+                              // Remove subject from selectedSubjects
+                              setSelectedSubjects(prev => prev.filter(id => id !== subjectId));
+                              
+                              // Remove all books of this subject from simulatedClasses
+                              setSimulatedClasses(prev => 
+                                prev.map(classGroup => ({
+                                  ...classGroup,
+                                  books: classGroup.books.filter(book => book.subject_id !== subjectId)
+                                })).filter(classGroup => classGroup.books.length > 0)
+                              );
+                            }}
+                            className="text-blue-600 hover:text-blue-800"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
                 {simulatedClasses.length > 0 ? (
                   <div className="space-y-4">
                     {simulatedClasses.map(classGroup => (
                       <div key={classGroup.class} className="border rounded-lg p-4">
                         <h4 className="font-semibold mb-2">Class {classGroup.class}</h4>
                         <div className="space-y-2">
-                          {classGroup.books.map(book => (
-                            <div key={`${book.id}-${book.class}`} className="flex items-center justify-between bg-gray-50 p-2 rounded">
-                              <div>
-                                <div className="font-medium">{book.name}</div>
-                                <div className="text-sm text-gray-500">
-                                  {subjects.find(s => s.id === book.subject_id)?.name} 
-                                  {/* {book.company_id && publications.find(p => p.id === book.company_id) 
-                                    ? ` - ${publications.find(p => p.id === book.company_id)?.name}` 
-                                    : ''} */}
+                          {classGroup.books.map(book => {
+                            const price = book?.price || 0;
+                            const isPriceNotFound = !price || price === 0;
+
+                            return (
+                              <div key={`${book.id}-${book.class}`} className="flex items-center justify-between bg-gray-50 p-2 rounded">
+                                <div>
+                                  <div className="font-medium">{book.name}
+                                  <span className="text-sm text-gray-500 ml-1">
+                                    ({subjects.find(s => s.id === book.subject_id)?.name})
+                                  </span>
+                                  </div>
+                                </div>
+                                <div className={`text-sm ${isPriceNotFound ? 'text-red-500 font-medium' : 'text-gray-700'} flex items-center gap-2`}>
+                                    ₹{isPriceNotFound ? 'N/A' : price}
+                                <button
+                                  onClick={() => removeSimulatedBook(classGroup.class, book.id)}
+                                  className="text-red-500 hover:text-red-700"
+                                >
+                                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                                  </svg>
+                                </button>
                                 </div>
                               </div>
-                              <button
-                                onClick={() => removeSimulatedBook(classGroup.class, book.id)}
-                                className="text-red-500 hover:text-red-700"
-                              >
-                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-                                </svg>
-                              </button>
-                            </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       </div>
                     ))}
                     <div className="flex justify-end gap-2 mt-4">
                       <Button
                         variant="secondary"
-                        onClick={() => {
-                          setSimulatedClasses([]);
-                          setShowSimulation(false);
-                        }}
+                        onClick={resetForm}
                       >
                         Clear All
+                      </Button>
+                      <Button
+                        variant="primary"
+                        onClick={handleSaveSimulation}
+                      >
+                        Save Book List
                       </Button>
                     </div>
                   </div>

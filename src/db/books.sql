@@ -5,5 +5,6 @@ CREATE TABLE IF NOT EXISTS books (
   price DECIMAL(5) NOT NULL,
   quantity INT NOT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  FOREIGN KEY (book_name_id) REFERENCES booknames(id) ON DELETE CASCADE
+  FOREIGN KEY (book_name_id) REFERENCES booknames(id) ON DELETE CASCADE,
+  UNIQUE KEY unique_book_name_class (book_name_id, class)
 ); 
